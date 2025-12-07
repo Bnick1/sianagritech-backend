@@ -1,8 +1,0 @@
-{
-  "name": "my-firebase-app",
-  "version": "1.0.0",
-  "description": "A simple static host for Firebase",
-  "scripts": {
-    "start": "echo 'App is running.' && exit 0"
-  }
-}
