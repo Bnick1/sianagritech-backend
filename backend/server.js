@@ -154,12 +154,12 @@ const routeStatus = {
   iot: false
 };
 
-// Windows-compatible route loading
+// Windows-compatible route loading - UPDATED PATHS
 const loadRoutes = async () => {
   const routes = [
-    { path: './routes/gateway.js', key: 'gateway', basePath: '/api/gateway' },
-    { path: './routes/farmerRoutes.js', key: 'farmers', basePath: '/api/agritech/farmers' },
-    { path: './routes/iotRoutes.js', key: 'iot', basePath: '/api/iot' }
+    { path: './routes/gateway.js', key: 'gateway', basePath: '/gateway' },
+    { path: './routes/farmerRoutes.js', key: 'farmers', basePath: '/farmers' },
+    { path: './routes/iotRoutes.js', key: 'iot', basePath: '/iot' }
   ];
 
   for (const route of routes) {
@@ -376,6 +376,9 @@ const startServer = async () => {
   - GET  /health : Health Check
   - GET  /ready  : Readiness Check
   - GET  /metrics: System Metrics
+  - POST /gateway/ussd : USSD Gateway
+  - POST /farmers/register : Farmer Registration
+  - GET  /iot/alerts : IoT Weather Alerts
   
   🔌 Gateway: ${routeStatus.gateway ? '✅' : '⚠️'}
   👨‍🌾 Farmers: ${routeStatus.farmers ? '✅' : '⚠️'}
