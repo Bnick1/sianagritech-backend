@@ -1,10 +1,10 @@
-# Create vercel.json
+# Update vercel.json
 @'
 {
   "version": 2,
   "builds": [
     {
-      "src": "backend/package.json",
+      "src": "backend/server.js",
       "use": "@vercel/node"
     }
   ],
@@ -13,6 +13,9 @@
       "src": "/(.*)",
       "dest": "/backend/server.js"
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 }
-'@ | Out-File -FilePath vercel.json -Encoding UTF8
+'@ | Set-Content vercel.json -Encoding UTF8
