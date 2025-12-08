@@ -154,7 +154,7 @@ const routeStatus = {
   iot: false
 };
 
-// Windows-compatible route loading - UPDATED PATHS
+// Windows-compatible route loading - UPDATED PATHS WITH DEBUG LOGGING
 const loadRoutes = async () => {
   const routes = [
     { path: './routes/gateway.js', key: 'gateway', basePath: '/gateway' },
@@ -165,24 +165,30 @@ const loadRoutes = async () => {
   for (const route of routes) {
     try {
       const routePath = path.join(__dirname, route.path);
+      console.log(`🔍 Loading route: ${route.key} from ${routePath}`);
       
       // Check if route file exists
       if (!fs.existsSync(routePath)) {
         console.warn(`⚠️ ${route.key} routes file not found: ${route.path}`);
+        console.warn(`   Full path: ${routePath}`);
         continue;
       }
 
       // Windows-compatible import
       const routeUrl = new URL(`file://${routePath}`).href;
+      console.log(`   Importing from: ${routeUrl}`);
+      
       const routeModule = await import(routeUrl);
       
       if (routeModule.default || routeModule) {
         app.use(route.basePath, routeModule.default || routeModule);
         routeStatus[route.key] = true;
-        console.log(`✅ ${route.key} routes loaded`);
+        console.log(`✅ ${route.key} routes loaded successfully`);
+      } else {
+        console.warn(`⚠️ ${route.key} module has no default export`);
       }
     } catch (error) {
-      console.warn(`⚠️ ${route.key} routes failed to load:`, error.message);
+      console.warn(`❌ ${route.key} routes failed to load:`, error.message);
     }
   }
 };
