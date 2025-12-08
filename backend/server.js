@@ -221,6 +221,27 @@ const loadRoutes = async () => {
   }
 };
 
+// ==================== DIRECT TEST ROUTES ====================
+// TEMPORARY: Test if routes work when added directly
+console.log('🔄 Adding test routes directly...');
+
+// Simple test route for gateway
+app.get('/gateway/test', (req, res) => {
+  res.json({ message: 'Gateway test route working', timestamp: new Date().toISOString() });
+});
+
+// Simple test route for farmers  
+app.get('/farmers/test', (req, res) => {
+  res.json({ message: 'Farmers test route working', timestamp: new Date().toISOString() });
+});
+
+// Simple test route for iot
+app.get('/iot/test', (req, res) => {
+  res.json({ message: 'IoT test route working', timestamp: new Date().toISOString() });
+});
+
+console.log('✅ Test routes added directly');
+
 // ==================== HEALTH CHECK ====================
 app.get('/health', async (req, res) => {
   try {
@@ -409,9 +430,9 @@ const startServer = async () => {
   - GET  /health : Health Check
   - GET  /ready  : Readiness Check
   - GET  /metrics: System Metrics
-  - POST /gateway/ussd : USSD Gateway
-  - POST /farmers/register : Farmer Registration
-  - GET  /iot/alerts : IoT Weather Alerts
+  - GET  /gateway/test : Gateway Test Route
+  - GET  /farmers/test : Farmers Test Route  
+  - GET  /iot/test : IoT Test Route
   
   🔌 Gateway: ${routeStatus.gateway ? '✅' : '⚠️'}
   👨‍🌾 Farmers: ${routeStatus.farmers ? '✅' : '⚠️'}
