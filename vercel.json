@@ -1,21 +1,11 @@
-# Update vercel.json
-@'
-{
+﻿{
   "version": 2,
+  "buildCommand": "npm install",
+  "outputDirectory": ".",
   "builds": [
     {
       "src": "backend/server.js",
       "use": "@vercel/node"
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/backend/server.js"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
-'@ | Set-Content vercel.json -Encoding UTF8
