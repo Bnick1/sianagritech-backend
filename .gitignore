@@ -1,0 +1,118 @@
+# ==================== DEPENDENCIES ====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
+package-lock.json
+yarn.lock
+
+# ==================== ENVIRONMENT ====================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# ==================== SECURITY ====================
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# ==================== RUNTIME ====================
+dist/
+build/
+.out/
+.next/
+.nuxt/
+.cache/
+.vercel/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==================== LOGS ====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ==================== TESTING ====================
+coverage/
+.nyc_output/
+*.lcov
+
+# ==================== DATABASE ====================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==================== OS & EDITOR ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Desktop.ini
+Thumbs.db
+ehthumbs.db
+
+# ==================== TEMP FILES ====================
+*.tmp
+*.temp
+.cache/
+.temp/
+
+# ==================== MONGODB ===================/
+/data/
+mongod.log
+
+# ==================== WINDOWS ====================
+# Windows thumbnail cache files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Windows shortcuts
+*.lnk
+
+# ==================== REACT/VITE ====================
+# Vite
+dist/
+dist-ssr/
+*.local
+
+# React
+.eslintcache
+
+# ==================== PYTHON ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ==================== PERSONAL ====================
+# Your personal files (add your own patterns here)
+personal/
+private/
+backups/
+
+# ==================== PROJECT SPECIFIC ====================
+# SianAgriTech specific
+backend/logs/
+backend/.env
+uploads/
+temp/
+screenshots/
