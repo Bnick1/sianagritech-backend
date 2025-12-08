@@ -23,8 +23,9 @@ if (!process.env.MONGODB_URI) {
 
 // Windows-compatible path for logs
 const logDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logDir)) {
-  //fs.mkdirSync(logDir, { recursive: true });
+// Skip directory creation on Vercel
+if (!fs.existsSync(logDir) && !process.env.VERCEL) {
+  fs.mkdirSync(logDir, { recursive: true });
 }
 
 const app = express();
@@ -75,11 +76,16 @@ app.use('/api/', limiter);
 
 // ==================== LOGGING ====================
 if (isProduction) {
-  const accessLogStream = fs.createWriteStream(
-    path.join(logDir, 'access.log'),
-    { flags: 'a' }
-  );
-  app.use(morgan('combined', { stream: accessLogStream }));
+  // Only create log stream if not on Vercel
+  if (!process.env.VERCEL && fs.existsSync(logDir)) {
+    const accessLogStream = fs.createWriteStream(
+      path.join(logDir, 'access.log'),
+      { flags: 'a' }
+    );
+    app.use(morgan('combined', { stream: accessLogStream }));
+  } else {
+    app.use(morgan('combined'));
+  }
 } else {
   app.use(morgan('dev'));
 }
@@ -355,9 +361,12 @@ const startServer = async () => {
     // Load routes
     await loadRoutes();
     
-    // Start server
-    const server = app.listen(port, () => {
-      console.log(`
+    // Start server - Vercel doesn't need listen(), but keep for local
+    if (process.env.VERCEL) {
+      console.log('🚀 Running on Vercel - app exported');
+    } else {
+      const server = app.listen(port, () => {
+        console.log(`
   ✅ Server running on port ${port}
   ✅ Time: ${new Date().toLocaleString()}
   
@@ -379,25 +388,9 @@ const startServer = async () => {
   - .env loaded: ${!!process.env.MONGODB_URI ? '✅' : '❌'}
   - MongoDB URI: ${process.env.MONGODB_URI ? 'Present' : 'Missing'}
   - API Keys: ${process.env.MTN_API_KEY && process.env.AT_API_KEY ? '✅' : '⚠️'}
-      `);
-    });
-
-    // Simple shutdown handler
-    const shutdown = () => {
-      console.log('\nShutting down...');
-      server.close(() => {
-        console.log('Server closed');
-        process.exit(0);
+        `);
       });
-      
-      setTimeout(() => {
-        console.log('Forcing shutdown');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    }
 
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
@@ -406,10 +399,10 @@ const startServer = async () => {
   }
 };
 
-// Export for testing
-export { app };
+// Export for Vercel
+export default app;
 
-// Start server
-if (process.env.NODE_ENV !== 'test') {
+// Start server only if not on Vercel (Vercel will import and run it)
+if (!process.env.VERCEL) {
   startServer();
 }
