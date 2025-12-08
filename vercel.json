@@ -1,25 +1,18 @@
+# Create vercel.json
+@'
 {
   "version": 2,
   "builds": [
     {
       "src": "backend/package.json",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["backend/**"]
-      }
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/backend/server.js"
-    },
-    {
       "src": "/(.*)",
       "dest": "/backend/server.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
+'@ | Out-File -FilePath vercel.json -Encoding UTF8
