@@ -13,12 +13,27 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// FIX: Load environment variables from ROOT folder (one level up)
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+// ==================== ENVIRONMENT VARIABLE LOADING ====================
+// Try multiple locations for .env file
+const envPaths = [
+  path.join(__dirname, '.env'),           // backend/.env
+  path.join(__dirname, '..', '.env'),     // root/.env
+  path.join(process.cwd(), '.env'),       // current working directory
+];
 
-// Also try current directory as fallback
-if (!process.env.MONGODB_URI) {
-  dotenv.config();
+let envLoaded = false;
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    console.log(`📁 Loaded .env from: ${envPath}`);
+    envLoaded = true;
+    break;
+  }
+}
+
+// If still no env vars, load from process.env (Vercel provides these)
+if (!envLoaded) {
+  console.log('ℹ️ Using environment variables from Vercel/system');
 }
 
 // Windows-compatible path for logs
@@ -33,7 +48,6 @@ const port = process.env.PORT || 3003; // Use 3003 as in your .env
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Log loaded environment (for debugging)
-console.log(`📁 .env loaded from: ${path.join(__dirname, '..', '.env')}`);
 console.log(`🔍 Checking env vars: MONGODB_URI=${!!process.env.MONGODB_URI}, MTN_API_KEY=${!!process.env.MTN_API_KEY}`);
 
 // ==================== SECURITY MIDDLEWARE ====================
@@ -154,7 +168,7 @@ const routeStatus = {
   iot: false
 };
 
-// Windows-compatible route loading - UPDATED PATHS WITH DEBUG LOGGING
+// Windows-compatible route loading - SIMPLIFIED
 const loadRoutes = async () => {
   const routes = [
     { path: './routes/gateway.js', key: 'gateway', basePath: '/gateway' },
@@ -169,26 +183,40 @@ const loadRoutes = async () => {
       
       // Check if route file exists
       if (!fs.existsSync(routePath)) {
-        console.warn(`⚠️ ${route.key} routes file not found: ${route.path}`);
-        console.warn(`   Full path: ${routePath}`);
+        console.warn(`⚠️ ${route.key} routes file not found`);
         continue;
       }
 
-      // Windows-compatible import
-      const routeUrl = new URL(`file://${routePath}`).href;
-      console.log(`   Importing from: ${routeUrl}`);
-      
-      const routeModule = await import(routeUrl);
+      // Try both ES module and CommonJS import
+      let routeModule;
+      try {
+        // ES Module import
+        const routeUrl = new URL(`file://${routePath}`).href;
+        routeModule = await import(routeUrl);
+        console.log(`   Imported as ES module`);
+      } catch (importError) {
+        console.warn(`⚠️ ES import failed: ${importError.message}`);
+        // CommonJS fallback
+        try {
+          // Create require function for ES module context
+          const require = (await import('module')).createRequire(import.meta.url);
+          routeModule = require(routePath);
+          console.log(`   Imported as CommonJS`);
+        } catch (requireError) {
+          console.warn(`⚠️ CommonJS import also failed: ${requireError.message}`);
+          continue;
+        }
+      }
       
       if (routeModule.default || routeModule) {
         app.use(route.basePath, routeModule.default || routeModule);
         routeStatus[route.key] = true;
-        console.log(`✅ ${route.key} routes loaded successfully`);
+        console.log(`✅ ${route.key} routes loaded`);
       } else {
-        console.warn(`⚠️ ${route.key} module has no default export`);
+        console.warn(`⚠️ ${route.key} module has no export`);
       }
     } catch (error) {
-      console.warn(`❌ ${route.key} routes failed to load:`, error.message);
+      console.warn(`❌ ${route.key} routes failed: ${error.message}`);
     }
   }
 };
@@ -355,7 +383,6 @@ const startServer = async () => {
     
     // Debug: Show if .env is loading
     console.log(`🔧 MONGODB_URI present: ${!!process.env.MONGODB_URI}`);
-    console.log(`🔧 .env location: ${path.join(__dirname, '..', '.env')}`);
     
     // Try to initialize database (but don't crash if it fails)
     try {
@@ -391,12 +418,6 @@ const startServer = async () => {
   📡 IoT: ${routeStatus.iot ? '✅' : '⚠️'}
   
   💾 Database: ${databaseInitialized ? '✅ Connected' : '⚠️ Limited Mode'}
-  
-  🔧 Environment Status:
-  ---------------------
-  - .env loaded: ${!!process.env.MONGODB_URI ? '✅' : '❌'}
-  - MongoDB URI: ${process.env.MONGODB_URI ? 'Present' : 'Missing'}
-  - API Keys: ${process.env.MTN_API_KEY && process.env.AT_API_KEY ? '✅' : '⚠️'}
         `);
       });
     }
