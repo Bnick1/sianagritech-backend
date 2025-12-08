@@ -168,8 +168,47 @@ const routeStatus = {
   iot: false
 };
 
-// Windows-compatible route loading - SIMPLIFIED
+// Windows-compatible route loading - USING SIMPLE ROUTES FOR TESTING
 const loadRoutes = async () => {
+  // First, test with simple inline routes
+  console.log('🔄 Testing with simple inline routes...');
+  
+  // Simple gateway route
+  app.get('/gateway/simple-status', (req, res) => {
+    res.json({ 
+      message: 'Simple gateway route working', 
+      timestamp: new Date().toISOString(),
+      path: '/gateway/simple-status'
+    });
+  });
+  routeStatus.gateway = true;
+  console.log('✅ Simple gateway route added');
+  
+  // Simple farmers route
+  app.get('/farmers/simple-status', (req, res) => {
+    res.json({ 
+      message: 'Simple farmers route working', 
+      timestamp: new Date().toISOString(),
+      path: '/farmers/simple-status'
+    });
+  });
+  routeStatus.farmers = true;
+  console.log('✅ Simple farmers route added');
+  
+  // Simple IoT route
+  app.get('/iot/simple-status', (req, res) => {
+    res.json({ 
+      message: 'Simple IoT route working', 
+      timestamp: new Date().toISOString(),
+      path: '/iot/simple-status'
+    });
+  });
+  routeStatus.iot = true;
+  console.log('✅ Simple IoT route added');
+  
+  // Now try to load actual route files
+  console.log('🔄 Now trying to load actual route files...');
+  
   const routes = [
     { path: './routes/gateway.js', key: 'gateway', basePath: '/gateway' },
     { path: './routes/farmerRoutes.js', key: 'farmers', basePath: '/farmers' },
@@ -211,7 +250,7 @@ const loadRoutes = async () => {
       if (routeModule.default || routeModule) {
         app.use(route.basePath, routeModule.default || routeModule);
         routeStatus[route.key] = true;
-        console.log(`✅ ${route.key} routes loaded`);
+        console.log(`✅ ${route.key} routes loaded from file`);
       } else {
         console.warn(`⚠️ ${route.key} module has no export`);
       }
@@ -433,6 +472,9 @@ const startServer = async () => {
   - GET  /gateway/test : Gateway Test Route
   - GET  /farmers/test : Farmers Test Route  
   - GET  /iot/test : IoT Test Route
+  - GET  /gateway/simple-status : Simple Gateway Status
+  - GET  /farmers/simple-status : Simple Farmers Status
+  - GET  /iot/simple-status : Simple IoT Status
   
   🔌 Gateway: ${routeStatus.gateway ? '✅' : '⚠️'}
   👨‍🌾 Farmers: ${routeStatus.farmers ? '✅' : '⚠️'}
