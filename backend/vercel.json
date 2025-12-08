@@ -1,1 +1,17 @@
-{ "version": 2 }
+@'
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
+  ]
+}
+'@ | Set-Content backend\vercel.json -Encoding UTF8
