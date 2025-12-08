@@ -24,7 +24,7 @@ if (!process.env.MONGODB_URI) {
 // Windows-compatible path for logs
 const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true });
+  //fs.mkdirSync(logDir, { recursive: true });
 }
 
 const app = express();
