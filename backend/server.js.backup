@@ -1,0 +1,311 @@
+// server.js - SianAgriTech Backend Server
+// Version: 3.3.1 - Added FinTech Integration for Credit Scoring & USSD Gateway
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import winston from 'winston';
+
+// Import API Key Middleware and keyStore
+import { apiKeyAuth, generateApiKey, keyStore } from './middleware/apiKeyAuth.js';
+
+// Import Routes
+import complianceRoutes from './routes/compliance.js';
+import farmerRoutes from './routes/farmers.js';
+import iotRoutes from './routes/iot.js';
+import weatherRoutes from './routes/weather.js';
+import irrigationRoutes from './routes/irrigation.js';
+import aiRoutes from './routes/ai.js';
+import apiKeyRoutes from './routes/apiKeyRoutes.js';
+import mineralRoutes from './modules/minerals/routes/mineralRoutes.js';
+import fintechIntegration from './routes/fintech-integration.js'; // Added for SianFinTech
+import ussdRoutes from './routes/ussdRoutes.js'; // ADDED: USSD Gateway for feature phones
+
+// Import Standards Initializer
+import { initializeDefaultStandards } from './modules/compliance/models/UKStandard.js';
+
+// Load environment variables
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3003;
+const HOST = process.env.HOST || 'localhost';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const isProduction = NODE_ENV === 'production';
+
+// MongoDB Connection
+let dbConnected = false;
+let mongooseConnection = null;
+
+const connectToDatabase = async () => {
+  try {
+    if (!process.env.MONGODB_URI) {
+      console.warn('Warning: MONGODB_URI not found');
+      return false;
+    }
+
+    console.log('Connecting to MongoDB...');
+    
+    const options = {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+    };
+
+    mongooseConnection = await mongoose.connect(process.env.MONGODB_URI, options);
+    
+    mongoose.connection.on('connected', () => {
+      console.log('MongoDB connected successfully');
+      dbConnected = true;
+    });
+
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB error:', err.message);
+      dbConnected = false;
+    });
+
+    await mongoose.connection.db.admin().ping();
+    dbConnected = true;
+    
+    if (dbConnected) {
+      await initializeDefaultStandards();
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('MongoDB connection failed:', error.message);
+    dbConnected = false;
+    return false;
+  }
+};
+
+// Logger Setup
+const logsDir = path.join(__dirname, 'logs');
+try {
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
+} catch (error) {
+  console.warn(`Cannot create logs directory: ${error.message}`);
+}
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'sianagritech-backend' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.printf(({ timestamp, level, message }) => {
+          return `${timestamp} ${level}: ${message}`;
+        })
+      )
+    }),
+    ...(fs.existsSync(logsDir) ? [
+      new winston.transports.File({ filename: path.join(logsDir, 'error.log'), level: 'error' }),
+      new winston.transports.File({ filename: path.join(logsDir, 'combined.log') })
+    ] : [])
+  ]
+});
+
+console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║            SIAN AGRITECH PLATFORM BACKEND v3.3.1             ║
+╠══════════════════════════════════════════════════════════════╣
+║  Date: ${new Date().toLocaleString()}                                  ║
+║  Environment: ${NODE_ENV.toUpperCase().padEnd(30)}                   ║
+║  Host: ${HOST}:${PORT}                                               ║
+║  Frontend: ${FRONTEND_URL}                                          ║
+║  Database: ${process.env.MONGODB_URI ? '✅ Configured' : '❌ Not Configured'}                            ║
+╚══════════════════════════════════════════════════════════════╝
+`);
+
+// Middleware Setup
+app.use(helmet({
+  contentSecurityPolicy: isProduction,
+  crossOriginEmbedderPolicy: isProduction,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+const corsOptions = {
+  origin: function(origin, callback) {
+    const allowedOrigins = process.env.CORS_ORIGIN 
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : ['http://localhost:5173', 'http://localhost:3000', FRONTEND_URL];
+    
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked for origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: process.env.CORS_CREDENTIALS === 'true',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+};
+
+app.use(cors(corsOptions));
+app.use(morgan(isProduction ? 'combined' : 'dev'));
+app.use(express.json({ limit: process.env.UPLOAD_MAX_SIZE || '5mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  const start = Date.now();
+  try {
+    res.json({
+      status: dbConnected ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      service: 'SianAgriTech API',
+      version: '3.3.1',
+      environment: NODE_ENV,
+      uptime: process.uptime(),
+      database: {
+        connected: dbConnected,
+        readyState: mongoose?.connection?.readyState || 0
+      },
+      memory: {
+        rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+        heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
+      },
+      processingTime: `${Date.now() - start}ms`
+    });
+  } catch (error) {
+    res.json({
+      status: 'error',
+      error: error.message,
+      processingTime: `${Date.now() - start}ms`
+    });
+  }
+});
+
+// Test endpoint
+app.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'SianAgriTech API is working',
+    timestamp: new Date().toISOString(),
+    database: dbConnected ? 'Connected' : 'Disconnected',
+    version: '3.3.1'
+  });
+});
+
+// API Routes
+app.use('/api/farmers', farmerRoutes);
+app.use('/api/iot', iotRoutes);
+app.use('/api/weather', weatherRoutes);
+app.use('/api/irrigation', irrigationRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/admin/keys', apiKeyRoutes);
+app.use('/api/compliance', complianceRoutes);
+app.use('/api/minerals', mineralRoutes);
+app.use('/api/v1/fintech', fintechIntegration); // Added for SianFinTech credit scoring
+app.use('/api/ussd', ussdRoutes); // ADDED: USSD Gateway for feature phone farmers
+
+console.log(`
+📡 Route Summary:
+• /api/farmers - Farmer management
+• /api/iot - IoT sensor data
+• /api/weather - Weather forecasts
+• /api/irrigation - Smart irrigation
+• /api/ai - AI analysis
+• /api/admin/keys - API key management
+• /api/compliance - UK/EU compliance
+• /api/minerals - Mineral traceability
+• /api/v1/fintech - SianFinTech integration (credit scoring)
+• /api/ussd - USSD Gateway for feature phones (dial *384#)
+`);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Error handler
+app.use((error, req, res, next) => {
+  logger.error('Server error:', error);
+  res.status(error.statusCode || 500).json({
+    success: false,
+    error: error.message || 'Internal Server Error',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Start server
+const startServer = async () => {
+  logger.info('Starting SianAgriTech backend...');
+  
+  if (process.env.MONGODB_URI) {
+    await connectToDatabase();
+  }
+  
+  // Load API keys from environment
+  if (process.env.SIANAGRITECH_API_KEY) {
+    const apiKey = process.env.SIANAGRITECH_API_KEY;
+    if (apiKey.startsWith('ag_')) {
+      keyStore.set(apiKey, {
+        key: apiKey,
+        name: 'sianfintech-integration',
+        createdAt: new Date().toISOString(),
+        active: true,
+        permissions: ['read', 'write']
+      });
+      console.log('✅ SianFinTech API key loaded');
+    }
+  }
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║            SIAN AGRITECH BACKEND IS RUNNING                   ║
+╠══════════════════════════════════════════════════════════════╣
+║  URL: http://${HOST}:${PORT}                                            ║
+║  Environment: ${NODE_ENV}                                              ║
+║  Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}                                     ║
+║  FinTech Integration: ✅ Active (for SianFinTech credit scoring)      ║
+║  USSD Gateway: ✅ Active (dial *384# for feature phones)             ║
+╚══════════════════════════════════════════════════════════════╝
+    `);
+  });
+
+  const gracefulShutdown = () => {
+    console.log('\nShutting down gracefully...');
+    server.close(() => {
+      if (mongooseConnection) mongooseConnection.disconnect();
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+};
+
+startServer().catch(error => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});
+
+export default app;

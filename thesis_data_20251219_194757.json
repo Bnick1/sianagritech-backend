@@ -1,0 +1,94 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "metadata":  {
+                                  "exportDate":  "2025-12-19T16:17:57.900Z",
+                                  "monitoringPeriod":  "30 days",
+                                  "system":  "SianAgriTech Cloud-Native Backend",
+                                  "thesisTargets":  {
+                                                        "uptime":  "\u003e99.5%",
+                                                        "latency":  "\u003c800ms for critical endpoints"
+                                                    }
+                              },
+                 "uptimeData":  {
+                                    "startTime":  "2025-12-19T16:08:20.066Z",
+                                    "totalRequests":  11,
+                                    "successfulRequests":  11,
+                                    "calculatedUptime":  "100.00%"
+                                },
+                 "endpointPerformance":  [
+                                             {
+                                                 "endpoint":  "/api/ai/analyze",
+                                                 "totalRequests":  0,
+                                                 "averageResponseTime":  "0.00ms",
+                                                 "meetsThesisTarget":  true,
+                                                 "sampleData":  [
+
+                                                                ]
+                                             },
+                                             {
+                                                 "endpoint":  "/api/irrigation/schedule",
+                                                 "totalRequests":  0,
+                                                 "averageResponseTime":  "0.00ms",
+                                                 "meetsThesisTarget":  true,
+                                                 "sampleData":  [
+
+                                                                ]
+                                             },
+                                             {
+                                                 "endpoint":  "/api/ai/irrigation-optimize",
+                                                 "totalRequests":  1,
+                                                 "averageResponseTime":  "336.00ms",
+                                                 "meetsThesisTarget":  true,
+                                                 "sampleData":  [
+                                                                    {
+                                                                        "date":  "2025-12-19",
+                                                                        "responseTime":  336,
+                                                                        "success":  true,
+                                                                        "timestamp":  "2025-12-19T16:17:57.642Z"
+                                                                    }
+                                                                ]
+                                             },
+                                             {
+                                                 "endpoint":  "/health",
+                                                 "totalRequests":  2,
+                                                 "averageResponseTime":  "1.50ms",
+                                                 "meetsThesisTarget":  true,
+                                                 "sampleData":  [
+                                                                    {
+                                                                        "date":  "2025-12-19",
+                                                                        "responseTime":  2,
+                                                                        "success":  true,
+                                                                        "timestamp":  "2025-12-19T16:17:57.261Z"
+                                                                    },
+                                                                    {
+                                                                        "date":  "2025-12-19",
+                                                                        "responseTime":  1,
+                                                                        "success":  true,
+                                                                        "timestamp":  "2025-12-19T16:17:57.714Z"
+                                                                    }
+                                                                ]
+                                             }
+                                         ],
+                 "systemMetrics":  {
+                                       "memoryUsageSamples":  [
+                                                                  {
+                                                                      "timestamp":  "2025-12-19T16:13:20.070Z",
+                                                                      "rss":  89,
+                                                                      "heapUsed":  35,
+                                                                      "heapTotal":  38
+                                                                  }
+                                                              ],
+                                       "responseTimeDistribution":  {
+                                                                        "0-100ms":  10,
+                                                                        "101-300ms":  0,
+                                                                        "301-500ms":  1,
+                                                                        "501-800ms":  0,
+                                                                        "801+ms":  0
+                                                                    }
+                                   }
+             },
+    "timestamp":  "2025-12-19T16:17:57.900Z",
+    "format":  "thesis_analysis",
+    "description":  "30-day performance data for thesis validation"
+}

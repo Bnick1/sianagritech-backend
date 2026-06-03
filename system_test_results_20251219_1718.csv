@@ -1,0 +1,11 @@
+"Endpoint","Status","LatencyMS","Response"
+"/health","Success","6","@{status=healthy; score=100; timestamp=2025-12-19T13:48:46.704Z; service=SianAgriTech Platform; version=1.0.0; environment=production; uptime=227.4612361; checks=}"
+"/ready","Success","2","@{ready=True; timestamp=2025-12-19T13:48:46.719Z; environment=production; checks=}"
+"/test","Success","4","@{success=True; message=SianAgriTech API is working!; timestamp=2025-12-19T13:48:46.727Z; environment=production; database=Connected; smart_irrigation=Ready; server=}"
+"/api/gateway/status","Success","3","@{status=online; timestamp=2025-12-19T13:48:46.734Z; environment=PRODUCTION; version=1.0.0; uptime=227.4908717; services=; endpoints=}"
+"/api/weather/enhanced-forecast","Success","2","@{success=True; forecast=System.Object[]; source=WeatherService; timestamp=2025-12-19T13:48:46.741Z}"
+"/api/iot/soil-moisture","Success","3","@{success=True; zones=System.Object[]; timestamp=2025-12-19T13:48:46.748Z; source=IoTDataService}"
+"/api/ai/crop-health","Success","2","@{success=True; zones=System.Object[]; timestamp=2025-12-19T13:48:46.754Z; source=AIService}"
+"/api/ai/disease-risk","Success","2","@{success=True; zones=System.Object[]; timestamp=2025-12-19T13:48:46.760Z; source=AIService}"
+"/api/irrigation/history","Success","3","@{success=True; history=System.Object[]; summary=; timestamp=2025-12-19T13:48:46.766Z}"
+"/api/ai/irrigation-optimize","Failed","3",
