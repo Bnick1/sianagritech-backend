@@ -1,0 +1,727 @@
+// backend/services/aiService.js
+import axios from 'axios';
+import mongoose from 'mongoose';
+import offlineSyncService from './offlineSyncService.js';
+
+class AIService {
+  constructor() {
+    this.models = {
+      cassava_disease: {
+        name: 'Cassava Disease Detector',
+        endpoint: process.env.CASSAVA_AI_ENDPOINT || 'local',
+        accuracy: 0.92,
+        supportedDiseases: ['cbsd', 'cmd', 'brown_streak', 'mosaic', 'healthy']
+      },
+      maize_disease: {
+        name: 'Maize Disease Detector',
+        endpoint: process.env.MAIZE_AI_ENDPOINT || 'local',
+        accuracy: 0.88,
+        supportedDiseases: ['northern_leaf_blight', 'common_rust', 'gray_leaf_spot', 'healthy']
+      },
+      general_crop_health: {
+        name: 'General Crop Health',
+        endpoint: process.env.GENERAL_AI_ENDPOINT || 'local',
+        accuracy: 0.85,
+        type: 'regression'
+      }
+    };
+
+    this.localModels = new Map(); // For edge computing
+    this.initLocalModels();
+  }
+
+  async initLocalModels() {
+    // Load TensorFlow.js models for edge computing
+    if (typeof window === 'undefined') {
+      try {
+        const tf = await import('@tensorflow/tfjs-node');
+        console.log('✅ TensorFlow.js loaded for server-side AI');
+        
+        // Load pre-trained models (would be downloaded from cloud)
+        this.tf = tf;
+      } catch (error) {
+        console.warn('⚠️ TensorFlow.js not available, using API-based AI:', error.message);
+      }
+    }
+  }
+
+  // Analyze crop image for diseases
+  async analyzeCropImage(imageData, cropType = 'cassava', farmId = null) {
+    const startTime = Date.now();
+    
+    try {
+      // Validate image data
+      const validatedImage = this.validateImageData(imageData);
+      if (!validatedImage.valid) {
+        throw new Error(`Invalid image: ${validatedImage.error}`);
+      }
+
+      let analysis;
+      
+      // Check if we should use edge computing (offline-first)
+      const useEdge = process.env.FEATURE_OFFLINE_MODE === 'true' || !navigator.onLine;
+      
+      if (useEdge && this.tf && this.localModels.has(cropType)) {
+        // Edge computing: Run AI locally
+        analysis = await this.analyzeOnEdge(validatedImage, cropType);
+        analysis.source = 'edge_computing';
+      } else {
+        // Cloud computing: Send to AI API
+        analysis = await this.analyzeViaAPI(validatedImage, cropType);
+        analysis.source = 'cloud_api';
+      }
+
+      // Generate actionable insights
+      const insights = this.generateInsights(analysis, cropType, farmId);
+      
+      // Create health record
+      const record = {
+        type: 'ai_analysis',
+        cropType,
+        farmId,
+        imageInfo: {
+          format: validatedImage.format,
+          size: validatedImage.size,
+          dimensions: validatedImage.dimensions
+        },
+        analysis,
+        insights,
+        confidence: analysis.confidence,
+        detectedDiseases: analysis.diseases?.filter(d => d.confidence > 0.6) || [],
+        recommendations: insights.recommendations,
+        processingTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        aiModel: this.models[`${cropType}_disease`]?.name || 'general'
+      };
+
+      // Store locally first (offline-first)
+      await offlineSyncService.queueOperation({
+        type: 'ai_prediction',
+        data: record,
+        priority: 'normal',
+        source: 'ai_service'
+      });
+
+      // If online, also save to database immediately
+      if (mongoose.connection.readyState === 1) {
+        const AIPrediction = mongoose.models.AIPrediction || 
+          mongoose.model('AIPrediction', new mongoose.Schema({
+            farmId: String,
+            cropType: String,
+            analysis: mongoose.Schema.Types.Mixed,
+            insights: mongoose.Schema.Types.Mixed,
+            confidence: Number,
+            detectedDiseases: Array,
+            recommendations: Array,
+            imageInfo: mongoose.Schema.Types.Mixed,
+            processingTime: Number,
+            aiModel: String,
+            source: String,
+            syncStatus: { type: String, default: 'synced' },
+            createdAt: { type: Date, default: Date.now }
+          }));
+        
+        await AIPrediction.create(record);
+      }
+
+      return {
+        success: true,
+        record,
+        message: 'Analysis completed successfully'
+      };
+
+    } catch (error) {
+      console.error('❌ AI analysis failed:', error.message);
+      
+      // Return error with fallback data
+      return {
+        success: false,
+        error: error.message,
+        fallback: this.generateFallbackInsights(cropType),
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  async analyzeOnEdge(imageData, cropType) {
+    // This would use TensorFlow.js models loaded locally
+    // For now, simulate edge processing
+    
+    console.log(`🖥️ Running edge AI for ${cropType}...`);
+    
+    // Simulate processing delay
+    await this.delay(500 + Math.random() * 1000);
+    
+    // Mock analysis based on crop type
+    const mockAnalysis = this.generateMockAnalysis(cropType);
+    
+    return {
+      ...mockAnalysis,
+      edgeProcessed: true,
+      modelVersion: '1.0.0-edge',
+      processingLocation: 'local_device'
+    };
+  }
+
+  async analyzeViaAPI(imageData, cropType) {
+    const model = this.models[`${cropType}_disease`];
+    if (!model) {
+      throw new Error(`No AI model configured for ${cropType}`);
+    }
+
+    try {
+      let response;
+      
+      if (model.endpoint === 'local' || model.endpoint.includes('localhost')) {
+        // Local mock for development
+        await this.delay(1000);
+        return this.generateMockAnalysis(cropType);
+      }
+      
+      // Real API call
+      response = await axios.post(model.endpoint, {
+        image: imageData.base64 || imageData.url,
+        crop_type: cropType,
+        model: model.name,
+        timestamp: new Date().toISOString()
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.AI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      });
+
+      if (response.data.success) {
+        return {
+          ...response.data.analysis,
+          apiVersion: response.data.version,
+          processingLocation: 'cloud'
+        };
+      } else {
+        throw new Error(response.data.error || 'AI API failed');
+      }
+
+    } catch (error) {
+      console.warn(`AI API failed, using fallback: ${error.message}`);
+      
+      // Fallback to mock analysis
+      return {
+        ...this.generateMockAnalysis(cropType),
+        apiFallback: true,
+        error: error.message
+      };
+    }
+  }
+
+  // Predict yield based on multiple factors
+  async predictYield(farmId, cropType, season = 'current') {
+    try {
+      // Get farm data
+      const Farm = mongoose.models.Farm;
+      const farm = await Farm.findById(farmId).lean();
+      
+      if (!farm) {
+        throw new Error('Farm not found');
+      }
+
+      // Get historical data
+      const SensorReading = mongoose.models.SensorReading;
+      const WeatherRecord = mongoose.models.WeatherRecord;
+      
+      const [sensorData, weatherData, historicalYield] = await Promise.all([
+        SensorReading.find({ farmId, timestamp: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }).lean(),
+        WeatherRecord.find({ farmId, recordedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }).lean(),
+        this.getHistoricalYield(farmId, cropType)
+      ]);
+
+      // Calculate factors
+      const factors = {
+        soilHealth: this.calculateSoilHealthScore(sensorData),
+        weatherScore: this.calculateWeatherScore(weatherData),
+        farmSize: farm.size || 1,
+        cropType: cropType,
+        historicalAverage: historicalYield,
+        season: this.getSeasonFactor(season),
+        managementScore: farm.managementScore || 0.7
+      };
+
+      // AI prediction algorithm
+      const prediction = this.calculateYieldPrediction(factors);
+      
+      // Confidence calculation
+      const confidence = this.calculatePredictionConfidence(sensorData, weatherData, historicalYield);
+      
+      // Generate insights
+      const insights = this.generateYieldInsights(prediction, factors, confidence);
+      
+      const record = {
+        type: 'yield_prediction',
+        farmId,
+        cropType,
+        season,
+        prediction: {
+          estimated: prediction.estimated,
+          unit: 'kg/ha',
+          range: {
+            low: prediction.low,
+            high: prediction.high
+          },
+          confidence
+        },
+        factors,
+        insights,
+        recommendations: insights.recommendations,
+        timestamp: new Date().toISOString()
+      };
+
+      // Store prediction
+      await offlineSyncService.queueOperation({
+        type: 'yield_prediction',
+        data: record,
+        priority: 'low',
+        source: 'ai_service'
+      });
+
+      return {
+        success: true,
+        prediction: record,
+        message: 'Yield prediction generated'
+      };
+
+    } catch (error) {
+      console.error('Yield prediction failed:', error.message);
+      
+      // Fallback prediction
+      return {
+        success: false,
+        error: error.message,
+        fallbackPrediction: this.generateFallbackYieldPrediction(cropType),
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  // Generate irrigation recommendations
+  async recommendIrrigation(farmId, cropType) {
+    try {
+      // Get current sensor data
+      const iotDataService = await import('./iotDataService.js');
+      const farmData = await iotDataService.default.collectFarmData(farmId);
+      
+      if (!farmData.aggregated?.sensors) {
+        throw new Error('No sensor data available');
+      }
+
+      const sensors = farmData.aggregated.sensors;
+      const weather = farmData.aggregated.weather || {};
+      const soil = farmData.aggregated.soil || {};
+      
+      // AI decision logic
+      const recommendation = {
+        needed: false,
+        amount: 0, // mm
+        duration: 0, // minutes
+        schedule: 'not_needed',
+        reason: 'Soil moisture adequate',
+        urgency: 'none'
+      };
+
+      // Decision matrix
+      const soilMoisture = sensors.soil_moisture;
+      const temperature = weather.temperature || sensors.temperature;
+      const rainfall = weather.rainfall || 0;
+      const forecastRain = weather.forecast?.[0]?.rainfall || 0;
+      
+      if (soilMoisture < 30) {
+        recommendation.needed = true;
+        recommendation.urgency = 'high';
+        recommendation.amount = this.calculateWaterDeficit(soilMoisture, cropType);
+        recommendation.duration = this.calculateIrrigationDuration(recommendation.amount);
+        recommendation.schedule = 'immediate';
+        recommendation.reason = `Soil moisture critically low (${soilMoisture}%)`;
+      } else if (soilMoisture < 50 && forecastRain < 5) {
+        recommendation.needed = true;
+        recommendation.urgency = 'medium';
+        recommendation.amount = this.calculateWaterDeficit(soilMoisture, cropType);
+        recommendation.duration = this.calculateIrrigationDuration(recommendation.amount);
+        recommendation.schedule = 'next_6_hours';
+        recommendation.reason = `Soil moisture low (${soilMoisture}%) with no rain expected`;
+      } else if (temperature > 32 && soilMoisture < 60) {
+        recommendation.needed = true;
+        recommendation.urgency = 'medium';
+        recommendation.amount = 10; // Light irrigation for heat stress
+        recommendation.duration = 15;
+        recommendation.schedule = 'evening';
+        recommendation.reason = `High temperature (${temperature}°C) with moderate soil moisture`;
+      }
+
+      // Add AI insights
+      recommendation.aiInsights = {
+        waterUseEfficiency: this.calculateWaterUseEfficiency(soil, cropType),
+        optimalTiming: this.calculateOptimalIrrigationTime(weather),
+        costEstimate: this.calculateIrrigationCost(recommendation.amount, farmId),
+        waterSource: this.recommendWaterSource(farmId)
+      };
+
+      return {
+        success: true,
+        recommendation,
+        dataSources: {
+          soilMoisture,
+          temperature,
+          rainfall,
+          forecastRain
+        },
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('Irrigation recommendation failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        fallback: this.generateFallbackIrrigationRecommendation(cropType)
+      };
+    }
+  }
+
+  // Utility methods
+  validateImageData(imageData) {
+    if (!imageData) {
+      return { valid: false, error: 'No image data provided' };
+    }
+
+    // Check for base64 or URL
+    const isBase64 = typeof imageData === 'string' && imageData.startsWith('data:image');
+    const isURL = typeof imageData === 'string' && imageData.startsWith('http');
+    const isBuffer = imageData instanceof Buffer;
+
+    if (!isBase64 && !isURL && !isBuffer) {
+      return { valid: false, error: 'Invalid image format' };
+    }
+
+    // Size validation (10MB max)
+    let size = 0;
+    if (isBase64) {
+      size = Math.ceil(imageData.length * 3 / 4);
+    } else if (isBuffer) {
+      size = imageData.length;
+    }
+
+    if (size > 10 * 1024 * 1024) {
+      return { valid: false, error: 'Image too large (max 10MB)' };
+    }
+
+    return {
+      valid: true,
+      format: isBase64 ? 'base64' : isURL ? 'url' : 'buffer',
+      size,
+      dimensions: 'unknown' // Would extract from image
+    };
+  }
+
+  generateInsights(analysis, cropType, farmId) {
+    const insights = {
+      overallHealth: 'good',
+      diseases: [],
+      recommendations: [],
+      warnings: [],
+      nextSteps: []
+    };
+
+    if (analysis.diseases && analysis.diseases.length > 0) {
+      const highConfidenceDiseases = analysis.diseases.filter(d => d.confidence > 0.7);
+      
+      if (highConfidenceDiseases.length > 0) {
+        insights.overallHealth = 'needs_attention';
+        
+        highConfidenceDiseases.forEach(disease => {
+          insights.diseases.push({
+            name: disease.name,
+            confidence: disease.confidence,
+            severity: disease.severity || 'medium'
+          });
+
+          // Disease-specific recommendations
+          const rec = this.getDiseaseRecommendation(disease.name, cropType);
+          if (rec) insights.recommendations.push(rec);
+        });
+
+        insights.warnings.push(`Detected ${highConfidenceDiseases.length} disease(s)`);
+      }
+    }
+
+    // Add general recommendations
+    if (analysis.healthScore < 70) {
+      insights.recommendations.push({
+        type: 'general_health',
+        priority: 'medium',
+        action: 'Schedule crop health inspection',
+        reason: `Crop health score is ${analysis.healthScore.toFixed(1)}%`
+      });
+    }
+
+    // Next steps
+    insights.nextSteps = [
+      'Monitor crop daily',
+      'Take follow-up photos in 3 days',
+      'Record any visible symptoms'
+    ];
+
+    return insights;
+  }
+
+  generateMockAnalysis(cropType) {
+    // Mock data for development
+    const diseases = {
+      cassava: [
+        { name: 'cbsd', confidence: 0.85, severity: 'high' },
+        { name: 'healthy', confidence: 0.12, severity: 'none' }
+      ],
+      maize: [
+        { name: 'common_rust', confidence: 0.78, severity: 'medium' },
+        { name: 'healthy', confidence: 0.20, severity: 'none' }
+      ]
+    };
+
+    return {
+      healthScore: 75 + Math.random() * 20,
+      diseases: diseases[cropType] || [{ name: 'healthy', confidence: 0.95, severity: 'none' }],
+      confidence: 0.85 + Math.random() * 0.1,
+      processingTime: 1200 + Math.random() * 800,
+      modelUsed: this.models[`${cropType}_disease`]?.name || 'general'
+    };
+  }
+
+  generateFallbackInsights(cropType) {
+    return {
+      overallHealth: 'unknown',
+      message: 'AI analysis unavailable. Manual inspection recommended.',
+      recommendations: [
+        {
+          type: 'manual_inspection',
+          priority: 'low',
+          action: 'Visually inspect crops for symptoms',
+          checklist: ['leaf discoloration', 'spots', 'wilting', 'stunted growth']
+        }
+      ]
+    };
+  }
+
+  // Yield prediction calculations
+  calculateYieldPrediction(factors) {
+    // Simplified yield prediction formula
+    const baseYield = {
+      cassava: 15000, // kg/ha average
+      maize: 2500,
+      beans: 1200,
+      coffee: 800
+    };
+
+    const base = baseYield[factors.cropType] || 1000;
+    
+    // Adjust based on factors
+    let estimated = base;
+    estimated *= factors.soilHealth / 100;
+    estimated *= factors.weatherScore / 100;
+    estimated *= factors.managementScore;
+    estimated *= factors.season;
+    estimated *= factors.farmSize;
+
+    // Add randomness for reality
+    const variation = 0.2; // ±20%
+    estimated *= (1 + (Math.random() * 2 - 1) * variation);
+
+    return {
+      estimated: Math.round(estimated),
+      low: Math.round(estimated * 0.8),
+      high: Math.round(estimated * 1.2)
+    };
+  }
+
+  calculatePredictionConfidence(sensorData, weatherData, historicalYield) {
+    let confidence = 0.5; // Base confidence
+    
+    if (sensorData.length > 10) confidence += 0.2;
+    if (weatherData.length > 5) confidence += 0.15;
+    if (historicalYield) confidence += 0.15;
+    
+    return Math.min(confidence, 0.95);
+  }
+
+  // Helper methods
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  getDiseaseRecommendation(diseaseName, cropType) {
+    const recommendations = {
+      cbsd: {
+        type: 'disease_management',
+        priority: 'high',
+        action: 'Remove and destroy infected plants immediately',
+        products: ['Systemic fungicide'],
+        schedule: 'Immediate action required'
+      },
+      cmd: {
+        type: 'disease_management',
+        priority: 'high',
+        action: 'Use certified disease-free planting material',
+        products: ['Insecticide for whiteflies'],
+        schedule: 'Next planting season'
+      },
+      common_rust: {
+        type: 'fungal_control',
+        priority: 'medium',
+        action: 'Apply fungicide at first signs',
+        products: ['Chlorothalonil', 'Mancozeb'],
+        schedule: 'Every 7-10 days'
+      }
+    };
+
+    return recommendations[diseaseName] || {
+      type: 'general_treatment',
+      priority: 'medium',
+      action: 'Consult agricultural extension officer',
+      products: [],
+      schedule: 'As soon as possible'
+    };
+  }
+
+  async getHistoricalYield(farmId, cropType) {
+    // Would query historical data
+    return null;
+  }
+
+  calculateSoilHealthScore(sensorData) {
+    if (!sensorData || sensorData.length === 0) return 50;
+    
+    const moistureReadings = sensorData.filter(d => d.soil_moisture).map(d => d.soil_moisture);
+    if (moistureReadings.length === 0) return 50;
+    
+    const avgMoisture = moistureReadings.reduce((a, b) => a + b, 0) / moistureReadings.length;
+    
+    // Score based on optimal moisture range (40-70%)
+    if (avgMoisture >= 40 && avgMoisture <= 70) return 85;
+    if (avgMoisture >= 30 && avgMoisture <= 80) return 70;
+    return 50;
+  }
+
+  calculateWeatherScore(weatherData) {
+    if (!weatherData || weatherData.length === 0) return 60;
+    
+    // Simple scoring based on recent weather
+    return 75; // Placeholder
+  }
+
+  getSeasonFactor(season) {
+    const factors = {
+      rainy: 1.2,
+      dry: 0.8,
+      current: 1.0,
+      planting: 0.9,
+      harvesting: 1.1
+    };
+    return factors[season] || 1.0;
+  }
+
+  generateYieldInsights(prediction, factors, confidence) {
+    const insights = {
+      predictedYield: prediction.estimated,
+      confidence,
+      factorsAffectingYield: [],
+      recommendations: [],
+      potentialImprovements: []
+    };
+
+    if (factors.soilHealth < 70) {
+      insights.recommendations.push({
+        type: 'soil_improvement',
+        priority: 'high',
+        action: 'Improve soil health through organic matter addition',
+        expectedImpact: '+15-25% yield increase'
+      });
+    }
+
+    if (factors.managementScore < 0.6) {
+      insights.recommendations.push({
+        type: 'management',
+        priority: 'medium',
+        action: 'Attend farm management training',
+        expectedImpact: '+10-20% yield increase'
+      });
+    }
+
+    return insights;
+  }
+
+  generateFallbackYieldPrediction(cropType) {
+    const averages = {
+      cassava: { estimated: 12000, low: 9600, high: 14400 },
+      maize: { estimated: 2000, low: 1600, high: 2400 },
+      beans: { estimated: 1000, low: 800, high: 1200 }
+    };
+
+    return {
+      prediction: averages[cropType] || { estimated: 1000, low: 800, high: 1200 },
+      confidence: 0.5,
+      note: 'Based on regional averages (AI unavailable)'
+    };
+  }
+
+  calculateWaterDeficit(soilMoisture, cropType) {
+    const optimal = { cassava: 60, maize: 65, beans: 70, general: 65 };
+    const target = optimal[cropType] || optimal.general;
+    
+    const deficit = Math.max(0, target - soilMoisture);
+    return Math.min(deficit * 2, 30); // Cap at 30mm
+  }
+
+  calculateIrrigationDuration(amountMM) {
+    // Assuming irrigation rate of 2mm per hour
+    return Math.round(amountMM / 2 * 60); // Minutes
+  }
+
+  calculateWaterUseEfficiency(soil, cropType) {
+    // Simple efficiency calculation
+    if (soil.type === 'clay') return 'high';
+    if (soil.type === 'sandy') return 'low';
+    return 'medium';
+  }
+
+  calculateOptimalIrrigationTime(weather) {
+    // Recommend early morning or late evening
+    const hour = new Date().getHours();
+    if (hour < 10) return 'now';
+    if (hour < 16) return 'evening (after 6 PM)';
+    return 'tomorrow morning';
+  }
+
+  calculateIrrigationCost(amountMM, farmId) {
+    // Simplified cost calculation
+    const costPerMM = 50; // UGX per mm per hectare
+    return amountMM * costPerMM;
+  }
+
+  recommendWaterSource(farmId) {
+    // Would check farm's available water sources
+    return ['rainwater', 'borehole', 'river'][Math.floor(Math.random() * 3)];
+  }
+
+  generateFallbackIrrigationRecommendation(cropType) {
+    const defaults = {
+      cassava: 'Water every 3-4 days during dry season',
+      maize: 'Ensure soil remains moist during flowering',
+      beans: 'Light, frequent watering preferred'
+    };
+
+    return {
+      recommendation: defaults[cropType] || 'Water when soil is dry to touch',
+      schedule: 'manual_check',
+      urgency: 'low'
+    };
+  }
+}
+
+export default new AIService();
