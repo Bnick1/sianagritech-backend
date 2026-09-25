@@ -1,13 +1,7 @@
-import Exporter from './ExporterProfile.js';
+// models/index.js - Compliance Models
+import Exporter from './Exporter.js';
 import FarmCompliance from './FarmCompliance.js';
 import ExportBatch from './ExportBatch.js';
-import UKStandard from './UKStandard.js';
-import Payment from './Payment.js'; // Add this
+import Payment from './Payment.js';
 
-export {
-  Exporter,
-  FarmCompliance,
-  ExportBatch,
-  UKStandard,
-  Payment
-};
+export { Exporter, FarmCompliance, ExportBatch, Payment };

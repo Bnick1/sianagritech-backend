@@ -1,311 +1,311 @@
-// server.js - SianAgriTech Backend Server
-// Version: 3.3.1 - Added FinTech Integration for Credit Scoring & USSD Gateway
-
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-import winston from 'winston';
+import axios from 'axios';
+import helmet from 'helmet';
 
-// Import API Key Middleware and keyStore
-import { apiKeyAuth, generateApiKey, keyStore } from './middleware/apiKeyAuth.js';
+// Import PDF routes
+import pdfRoutes from './routes/pdfRoutes.js';
 
-// Import Routes
-import complianceRoutes from './routes/compliance.js';
-import farmerRoutes from './routes/farmers.js';
-import iotRoutes from './routes/iot.js';
-import weatherRoutes from './routes/weather.js';
-import irrigationRoutes from './routes/irrigation.js';
-import aiRoutes from './routes/ai.js';
-import apiKeyRoutes from './routes/apiKeyRoutes.js';
-import mineralRoutes from './modules/minerals/routes/mineralRoutes.js';
-import fintechIntegration from './routes/fintech-integration.js'; // Added for SianFinTech
-import ussdRoutes from './routes/ussdRoutes.js'; // ADDED: USSD Gateway for feature phones
+// Import models
+import Farm from './models/Farm.js';
 
-// Import Standards Initializer
-import { initializeDefaultStandards } from './modules/compliance/models/UKStandard.js';
-
-// Load environment variables
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
-const PORT = process.env.PORT || 3003;
-const HOST = process.env.HOST || 'localhost';
-const NODE_ENV = process.env.NODE_ENV || 'development';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const isProduction = NODE_ENV === 'production';
 
-// MongoDB Connection
-let dbConnected = false;
-let mongooseConnection = null;
-
-const connectToDatabase = async () => {
-  try {
-    if (!process.env.MONGODB_URI) {
-      console.warn('Warning: MONGODB_URI not found');
-      return false;
-    }
-
-    console.log('Connecting to MongoDB...');
-    
-    const options = {
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 30000,
-      maxPoolSize: 10,
-      minPoolSize: 2,
-    };
-
-    mongooseConnection = await mongoose.connect(process.env.MONGODB_URI, options);
-    
-    mongoose.connection.on('connected', () => {
-      console.log('MongoDB connected successfully');
-      dbConnected = true;
-    });
-
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB error:', err.message);
-      dbConnected = false;
-    });
-
-    await mongoose.connection.db.admin().ping();
-    dbConnected = true;
-    
-    if (dbConnected) {
-      await initializeDefaultStandards();
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('MongoDB connection failed:', error.message);
-    dbConnected = false;
-    return false;
-  }
-};
-
-// Logger Setup
-const logsDir = path.join(__dirname, 'logs');
-try {
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
-} catch (error) {
-  console.warn(`Cannot create logs directory: ${error.message}`);
-}
-
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    winston.format.json()
-  ),
-  defaultMeta: { service: 'sianagritech-backend' },
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.printf(({ timestamp, level, message }) => {
-          return `${timestamp} ${level}: ${message}`;
-        })
-      )
-    }),
-    ...(fs.existsSync(logsDir) ? [
-      new winston.transports.File({ filename: path.join(logsDir, 'error.log'), level: 'error' }),
-      new winston.transports.File({ filename: path.join(logsDir, 'combined.log') })
-    ] : [])
-  ]
-});
-
-console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║            SIAN AGRITECH PLATFORM BACKEND v3.3.1             ║
-╠══════════════════════════════════════════════════════════════╣
-║  Date: ${new Date().toLocaleString()}                                  ║
-║  Environment: ${NODE_ENV.toUpperCase().padEnd(30)}                   ║
-║  Host: ${HOST}:${PORT}                                               ║
-║  Frontend: ${FRONTEND_URL}                                          ║
-║  Database: ${process.env.MONGODB_URI ? '✅ Configured' : '❌ Not Configured'}                            ║
-╚══════════════════════════════════════════════════════════════╝
-`);
-
-// Middleware Setup
-app.use(helmet({
-  contentSecurityPolicy: isProduction,
-  crossOriginEmbedderPolicy: isProduction,
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-
-const corsOptions = {
-  origin: function(origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-      : ['http://localhost:5173', 'http://localhost:3000', FRONTEND_URL];
-    
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS blocked for origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: process.env.CORS_CREDENTIALS === 'true',
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
-};
-
-app.use(cors(corsOptions));
-app.use(morgan(isProduction ? 'combined' : 'dev'));
-app.use(express.json({ limit: process.env.UPLOAD_MAX_SIZE || '5mb' }));
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check endpoint
-app.get('/health', async (req, res) => {
-  const start = Date.now();
-  try {
-    res.json({
-      status: dbConnected ? 'healthy' : 'degraded',
-      timestamp: new Date().toISOString(),
-      service: 'SianAgriTech API',
-      version: '3.3.1',
-      environment: NODE_ENV,
-      uptime: process.uptime(),
-      database: {
-        connected: dbConnected,
-        readyState: mongoose?.connection?.readyState || 0
-      },
-      memory: {
-        rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
-        heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
-      },
-      processingTime: `${Date.now() - start}ms`
-    });
-  } catch (error) {
-    res.json({
-      status: 'error',
-      error: error.message,
-      processingTime: `${Date.now() - start}ms`
-    });
-  }
-});
+// ============================================================
+// MONGODB CONNECTION
+// ============================================================
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://nkiremire9_db_user:MutesiMeghan%4098@cluster0.ksslca9.mongodb.net/sian-fintech?retryWrites=true&w=majority';
 
-// Test endpoint
-app.get('/test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'SianAgriTech API is working',
-    timestamp: new Date().toISOString(),
-    database: dbConnected ? 'Connected' : 'Disconnected',
-    version: '3.3.1'
-  });
-});
+console.log('?? Connecting to MongoDB...');
+mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 10000,
+    connectTimeoutMS: 5000,
+})
+.then(() => console.log('? MongoDB connected'))
+.catch(err => console.error('? MongoDB error:', err.message));
 
-// API Routes
-app.use('/api/farmers', farmerRoutes);
-app.use('/api/iot', iotRoutes);
-app.use('/api/weather', weatherRoutes);
-app.use('/api/irrigation', irrigationRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/admin/keys', apiKeyRoutes);
-app.use('/api/compliance', complianceRoutes);
-app.use('/api/minerals', mineralRoutes);
-app.use('/api/v1/fintech', fintechIntegration); // Added for SianFinTech credit scoring
-app.use('/api/ussd', ussdRoutes); // ADDED: USSD Gateway for feature phone farmers
-
-console.log(`
-📡 Route Summary:
-• /api/farmers - Farmer management
-• /api/iot - IoT sensor data
-• /api/weather - Weather forecasts
-• /api/irrigation - Smart irrigation
-• /api/ai - AI analysis
-• /api/admin/keys - API key management
-• /api/compliance - UK/EU compliance
-• /api/minerals - Mineral traceability
-• /api/v1/fintech - SianFinTech integration (credit scoring)
-• /api/ussd - USSD Gateway for feature phones (dial *384#)
-`);
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Endpoint not found',
-    path: req.path,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Error handler
-app.use((error, req, res, next) => {
-  logger.error('Server error:', error);
-  res.status(error.statusCode || 500).json({
-    success: false,
-    error: error.message || 'Internal Server Error',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Start server
-const startServer = async () => {
-  logger.info('Starting SianAgriTech backend...');
-  
-  if (process.env.MONGODB_URI) {
-    await connectToDatabase();
-  }
-  
-  // Load API keys from environment
-  if (process.env.SIANAGRITECH_API_KEY) {
-    const apiKey = process.env.SIANAGRITECH_API_KEY;
-    if (apiKey.startsWith('ag_')) {
-      keyStore.set(apiKey, {
-        key: apiKey,
-        name: 'sianfintech-integration',
-        createdAt: new Date().toISOString(),
-        active: true,
-        permissions: ['read', 'write']
-      });
-      console.log('✅ SianFinTech API key loaded');
+// ============================================================
+// GEOSPATIAL INTEGRATION SERVICE
+// ============================================================
+class AgriTechGeoService {
+    constructor() {
+        this.geoApiUrl = process.env.SIAN_GEO_URL || 'https://geo.siantechnologies.tech';
+        this.geoApiKey = 'sian_geo_2026';
+        this.timeout = 5000;
     }
-  }
 
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║            SIAN AGRITECH BACKEND IS RUNNING                   ║
-╠══════════════════════════════════════════════════════════════╣
-║  URL: http://${HOST}:${PORT}                                            ║
-║  Environment: ${NODE_ENV}                                              ║
-║  Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}                                     ║
-║  FinTech Integration: ✅ Active (for SianFinTech credit scoring)      ║
-║  USSD Gateway: ✅ Active (dial *384# for feature phones)             ║
-╚══════════════════════════════════════════════════════════════╝
-    `);
-  });
+    async getCropHealth(farmId) {
+        try {
+            const url = this.geoApiUrl + '/api/satellite/ndvi/farm/' + farmId;
+            const response = await axios.get(url, {
+                headers: { 'X-API-Key': this.geoApiKey },
+                timeout: this.timeout
+            });
+            return response.data.data;
+        } catch (error) {
+            console.warn('?? SianGeo crop health unavailable:', error.message);
+            return null;
+        }
+    }
 
-  const gracefulShutdown = () => {
-    console.log('\nShutting down gracefully...');
-    server.close(() => {
-      if (mongooseConnection) mongooseConnection.disconnect();
-      process.exit(0);
+    async getCreditScore(farmId) {
+        try {
+            const url = this.geoApiUrl + '/api/credit/score/' + farmId;
+            const response = await axios.get(url, {
+                headers: { 'X-API-Key': this.geoApiKey },
+                timeout: this.timeout
+            });
+            return response.data.data;
+        } catch (error) {
+            console.warn('?? SianGeo credit score unavailable:', error.message);
+            return null;
+        }
+    }
+
+    async checkAvailability() {
+        try {
+            const response = await axios.get(this.geoApiUrl + '/health', {
+                timeout: 5000
+            });
+            return response.status === 200 && (response.data.status === 'ok' || response.data.status === 'healthy');
+        } catch (error) {
+            console.error('? SianGeo availability check failed:', error.message);
+            return false;
+        }
+    }
+}
+
+const agriTechGeoService = new AgriTechGeoService();
+
+// ============================================================
+// ROUTES
+// ============================================================
+
+// Root
+app.get('/', (req, res) => {
+    res.json({
+        status: 'ok',
+        service: 'SianAgriTech API',
+        version: '3.1.0',
+        description: 'Smart Farming Platform with Geospatial Integration',
+        endpoints: {
+            health: '/health',
+            test: '/test',
+            farms: '/api/farms',
+            geo_status: '/api/geo/status',
+            crop_health: '/api/geo/crop-health/:farmId',
+            credit_score: '/api/geo/credit-score/:farmId',
+            pdf: '/api/pdf'
+        }
     });
-  };
+});
 
-  process.on('SIGTERM', gracefulShutdown);
-  process.on('SIGINT', gracefulShutdown);
-};
+// Health
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        service: 'SianAgriTech API',
+        timestamp: new Date().toISOString(),
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+        geospatial: {
+            available: true,
+            url: 'https://api-gateway-navy.vercel.app'
+        }
+    });
+});
 
-startServer().catch(error => {
-  console.error('Failed to start server:', error);
-  process.exit(1);
+// Test
+app.get('/test', (req, res) => {
+    res.json({ message: 'API is working!' });
+});
+
+// Farms - Using your actual Farm model
+app.post('/api/farms', async (req, res) => {
+    try {
+        const { farmId, farmerName, cropType, areaHa, district, village, geometry } = req.body;
+        if (!farmId) {
+            return res.status(400).json({ error: 'farmId is required' });
+        }
+        const existingFarm = await Farm.findOne({ code: farmId });
+        if (existingFarm) {
+            return res.status(409).json({ error: 'Farm already exists' });
+        }
+        const farm = new Farm({
+            code: farmId,
+            name: farmId,
+            size: areaHa || 0,
+            'location.district': district || 'Unknown',
+            'location.village': village || 'Unknown',
+            'location.coordinates': geometry ? geometry.coordinates[0] : [0, 0]
+        });
+        await farm.save();
+        res.json({ success: true, farmId: farm.code, message: 'Farm created successfully' });
+    } catch (error) {
+        console.error('Farm creation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/farms', async (req, res) => {
+    try {
+        const farms = await Farm.find().limit(100).populate('farmerId');
+        const total = await Farm.countDocuments();
+        const formattedFarms = farms.map(f => ({
+            farmId: f.code,
+            farmerName: f.farmerId ? f.farmerId.name : 'Unknown',
+            cropType: f.crops && f.crops.length > 0 ? f.crops[0].crop : 'Unknown',
+            areaHa: f.size,
+            district: f.location?.district || 'Unknown',
+            village: f.location?.village || 'Unknown'
+        }));
+        res.json({ success: true, data: { farms: formattedFarms, total } });
+    } catch (error) {
+        console.error('Farms fetch error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Geo Status
+app.get('/api/geo/status', async (req, res) => {
+    try {
+        const isAvailable = await agriTechGeoService.checkAvailability();
+        res.json({
+            success: true,
+            data: {
+                available: isAvailable,
+                url: 'https://api-gateway-navy.vercel.app'
+            }
+        });
+    } catch (error) {
+        console.error('Geo status error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Crop Health
+app.get('/api/geo/crop-health/:farmId', async (req, res) => {
+    try {
+        const { farmId } = req.params;
+        const cropHealth = await agriTechGeoService.getCropHealth(farmId);
+        if (!cropHealth) {
+            return res.status(404).json({ success: false, error: 'Crop health data not available' });
+        }
+        res.json({ success: true, data: cropHealth });
+    } catch (error) {
+        console.error('Crop health error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Credit Score
+app.get('/api/geo/credit-score/:farmId', async (req, res) => {
+    try {
+        const { farmId } = req.params;
+        const creditScore = await agriTechGeoService.getCreditScore(farmId);
+        if (!creditScore) {
+            return res.status(404).json({ success: false, error: 'Credit score not available' });
+        }
+        res.json({ success: true, data: creditScore });
+    } catch (error) {
+        console.error('Credit score error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// USSD
+app.post('/api/ussd/callback', async (req, res) => {
+    try {
+        const { sessionId, phoneNumber, text } = req.body;
+        if (!text || text === '') {
+            res.set('Content-Type', 'text/plain');
+            return res.send('CON Welcome to SianAgriTech!\\n1. Register\\n2. Check Credit Score\\n3. Help');
+        }
+        if (text === '1') {
+            res.set('Content-Type', 'text/plain');
+            return res.send('CON Enter your name:');
+        }
+        if (text.startsWith('1*')) {
+            const parts = text.split('*');
+            if (parts.length === 2) {
+                res.set('Content-Type', 'text/plain');
+                return res.send('CON Enter your district:');
+            }
+            if (parts.length === 3) {
+                res.set('Content-Type', 'text/plain');
+                return res.send('CON Enter your village:');
+            }
+            if (parts.length === 4) {
+                res.set('Content-Type', 'text/plain');
+                return res.send('END Registration successful! Your credit score is 50/100');
+            }
+        }
+        if (text === '2') {
+            res.set('Content-Type', 'text/plain');
+            return res.send('END Your credit score: 50/100');
+        }
+        if (text === '3') {
+            res.set('Content-Type', 'text/plain');
+            return res.send('END Help: Dial *384# for main menu');
+        }
+        res.set('Content-Type', 'text/plain');
+        res.send('END Invalid option. Dial *384# to start over.');
+    } catch (error) {
+        res.set('Content-Type', 'text/plain');
+        res.send('END Service unavailable');
+    }
+});
+
+// ============================================================
+// PDF ROUTES
+// ============================================================
+app.use('/api/pdf', pdfRoutes);
+
+// ============================================================
+// ERROR HANDLING
+// ============================================================
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found: ' + req.originalUrl
+    });
+});
+
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+});
+
+// ============================================================
+// SERVER START
+// ============================================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log('');
+    console.log('========================================');
+    console.log('  SIANAGRITECH API v3.1.0');
+    console.log('========================================');
+    console.log('  ?? Server: http://localhost:' + PORT);
+    console.log('  ?? Health: http://localhost:' + PORT + '/health');
+    console.log('  ?? Farms: http://localhost:' + PORT + '/api/farms');
+    console.log('  ?? Geo: http://localhost:' + PORT + '/api/geo/status');
+    console.log('  ?? USSD: *384#');
+    console.log('  ?? PDF Reports: http://localhost:' + PORT + '/api/pdf');
+    console.log('========================================');
+    console.log('');
 });
 
 export default app;
+

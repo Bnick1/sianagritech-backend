@@ -5,3 +5,5 @@
 .vercel/
 research/
 .DS_Store
+.vercel
+.env*
